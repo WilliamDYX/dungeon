@@ -1,12 +1,12 @@
 // main.ts - Shadow Dungeon for Deno Deploy
 // 替换原来的 server.js，直接部署到 Deno Deploy
 
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.210.0/http/server.ts";
 
 // AI 配置
 const AI_API = "https://token.sensenova.cn/v1/chat/completions";
 const AI_MODEL = "deepseek-v4-flash";
-const AI_KEY = "sk-5UQHaMXsotPetObMiF3Z6GHOs1Kf4t1X";
+const AI_KEY = Deno.env.get("AI_KEY");
 
 // MIME 类型映射
 const MIME: Record<string, string> = {
@@ -20,13 +20,15 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
-// 读取请求体
-async function readBody(req: Request): Promise<string> {
-  const text = await req.text();
-  return text;
+// 获取 Content-Type（修复：不再依赖未定义的 path 变量）
+function getContentType(filePath: string): string {
+  const dotIndex = filePath.lastIndexOf(".");
+  if (dotIndex === -1) return "application/octet-stream";
+  const ext = filePath.slice(dotIndex).toLowerCase();
+  return MIME[ext] || "application/octet-stream";
 }
 
-// 代理调用 AI（用 fetch 代替 https.request）
+// 代理调用 AI
 async function proxyChat(messages: unknown[]) {
   try {
     const response = await fetch(AI_API, {
@@ -57,16 +59,6 @@ async function proxyChat(messages: unknown[]) {
   }
 }
 
-// 获取 Content-Type
-function getContentType(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-  return MIME[ext] || "application/octet-stream";
-}
-
-// 使用 Deno 的 path 模块
-import { extname as _extname, join, normalize, resolve } from "https://deno.land/std@0.224.0/path/mod.ts";
-const path = { extname: _extname, join, normalize, resolve };
-
 // 主处理函数
 const handler = async (req: Request): Promise<Response> => {
   const url = new URL(req.url);
@@ -76,7 +68,8 @@ const handler = async (req: Request): Promise<Response> => {
   if (pathname === "/api/chat" && req.method === "POST") {
     let payload: { messages?: unknown[] };
     try {
-      payload = JSON.parse(await readBody(req) || "{}");
+      const bodyText = await req.text();
+      payload = JSON.parse(bodyText || "{}");
     } catch {
       return new Response(
         JSON.stringify({ error: true, msg: "请求体无效" }),
@@ -101,12 +94,14 @@ const handler = async (req: Request): Promise<Response> => {
 
   // 静态文件托管
   let fp = pathname === "/" ? "/roguelike.html" : pathname;
-  // 防止路径穿越
-  fp = path.normalize(fp).replace(/^(\.\.[/\\])+/, "");
-  const abs = path.join(Deno.cwd(), fp);
-
+  
+  // 防止路径穿越（简化版，不依赖 path 模块）
+  while (fp.includes("..")) {
+    fp = fp.replace(/\/\.\.\/?/g, "/");
+  }
+  
   try {
-    const file = await Deno.open(abs, { read: true });
+    const file = await Deno.open(`.${fp}`, { read: true });
     const contentType = getContentType(fp);
     return new Response(file.readable, {
       headers: { "Content-Type": contentType },
@@ -119,7 +114,7 @@ const handler = async (req: Request): Promise<Response> => {
   }
 };
 
-// 启动服务
+// 启动服务（不指定端口和 hostname，让 Deno Deploy 自动处理）
 serve(handler);
 
 console.log("Shadow Dungeon 已启动（Deno Deploy 模式）");
