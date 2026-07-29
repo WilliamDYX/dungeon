@@ -59,7 +59,7 @@ async function proxyChat(messages: unknown[]) {
   }
 }
 
-// 主处理函数
+// 主处理函数 
 const handler = async (req: Request): Promise<Response> => {
   const url = new URL(req.url);
   const pathname = url.pathname;
@@ -68,14 +68,32 @@ const handler = async (req: Request): Promise<Response> => {
   if (pathname === "/api/chat" && req.method === "POST") {
     let payload: { messages?: unknown[] };
     try {
-      const bodyText = await req.text();
-      payload = JSON.parse(bodyText || "{}");
-    } catch {
-      return new Response(
-        JSON.stringify({ error: true, msg: "请求体无效" }),
-        { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" } }
-      );
+  // 先检查文件是否存在，避免 Deno.open 抛出非文件不存在的异常
+  try {
+    const stat = await Deno.stat(`.${fp}`);
+    if (!stat.isFile) {
+      throw new Error("Not a file");
     }
+  } catch {
+    return new Response(`404 Not Found: ${pathname}`, {
+      status: 404,
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+    });
+  }
+  
+  const file = await Deno.open(`.${fp}`, { read: true });
+  const contentType = getContentType(fp);
+  return new Response(file.readable, {
+    headers: { "Content-Type": contentType },
+  });
+} catch (error) {
+  // 兜底：任何意外错误都返回 500，保证服务不崩溃
+  console.error("Static file error:", error);
+  return new Response("Internal Server Error", {
+    status: 500,
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
 
     if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
       return new Response(
