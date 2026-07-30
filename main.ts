@@ -1,6 +1,4 @@
-// main.ts - Shadow Dungeon for Deno Deploy
-// 替换原来的 server.js，直接部署到 Deno Deploy
-
+// main.ts - Shadow Dungeon for Deno Deploy（最小可行版本）
 import { serve } from "https://deno.land/std@0.210.0/http/server.ts";
 
 // AI 配置
@@ -20,7 +18,6 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
 };
 
-// 获取 Content-Type（修复：不再依赖未定义的 path 变量）
 function getContentType(filePath: string): string {
   const dotIndex = filePath.lastIndexOf(".");
   if (dotIndex === -1) return "application/octet-stream";
@@ -28,7 +25,6 @@ function getContentType(filePath: string): string {
   return MIME[ext] || "application/octet-stream";
 }
 
-// 代理调用 AI
 async function proxyChat(messages: unknown[]) {
   try {
     const response = await fetch(AI_API, {
@@ -59,96 +55,72 @@ async function proxyChat(messages: unknown[]) {
   }
 }
 
-// 主处理函数 
+// 主处理函数
 const handler = async (req: Request): Promise<Response> => {
-  const url = new URL(req.url);
-  const pathname = url.pathname;
-
-  // API: AI 对话代理
-  if (pathname === "/api/chat" && req.method === "POST") {
-    let payload: { messages?: unknown[] };
-    try {
-  // 先检查文件是否存在，避免 Deno.open 抛出非文件不存在的异常
   try {
-  // 先检查文件是否存在，避免 Deno.open 抛出非文件不存在的异常
-  try {
-    const stat = await Deno.stat(`.${fp}`);
-    if (!stat.isFile) {
-      throw new Error("Not a file");
-    }
-  } catch {
-    return new Response(`404 Not Found: ${pathname}`, {
-      status: 404,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
-  
-  const file = await Deno.open(`.${fp}`, { read: true });
-  const contentType = getContentType(fp);
-  return new Response(file.readable, {
-    headers: { "Content-Type": contentType },
-  });
-} catch (error) {
-  // 兜底：任何意外错误都返回 500，保证服务不崩溃
-  console.error("Static file error:", error);
-  return new Response("Internal Server Error", {
-    status: 500,
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
-}
-  
-  const file = await Deno.open(`.${fp}`, { read: true });
-  const contentType = getContentType(fp);
-  return new Response(file.readable, {
-    headers: { "Content-Type": contentType },
-  });
-} catch (error) {
-  // 兜底：任何意外错误都返回 500，保证服务不崩溃
-  console.error("Static file error:", error);
-  return new Response("Internal Server Error", {
-    status: 500,
-    headers: { "Content-Type": "text/plain; charset=utf-8" },
-  });
-}
+    const url = new URL(req.url);
+    const pathname = url.pathname;
 
-    if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
+    // API: AI 对话代理
+    if (pathname === "/api/chat" && req.method === "POST") {
+      let payload: { messages?: unknown[] };
+      try {
+        const bodyText = await req.text();
+        payload = JSON.parse(bodyText || "{}");
+      } catch {
+        return new Response(
+          JSON.stringify({ error: true, msg: "请求体无效" }),
+          { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" } }
+        );
+      }
+
+      if (!Array.isArray(payload.messages) || payload.messages.length === 0) {
+        return new Response(
+          JSON.stringify({ error: true, msg: "缺少 messages" }),
+          { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" } }
+        );
+      }
+
+      const result = await proxyChat(payload.messages);
+      const status = result.error ? 502 : 200;
       return new Response(
-        JSON.stringify({ error: true, msg: "缺少 messages" }),
-        { status: 400, headers: { "Content-Type": "application/json; charset=utf-8" } }
+        JSON.stringify(result),
+        { status, headers: { "Content-Type": "application/json; charset=utf-8" } }
       );
     }
 
-    const result = await proxyChat(payload.messages);
-    const status = result.error ? 502 : 200;
-    return new Response(
-      JSON.stringify(result),
-      { status, headers: { "Content-Type": "application/json; charset=utf-8" } }
-    );
-  }
-
-  // 静态文件托管
-  let fp = pathname === "/" ? "/roguelike.html" : pathname;
-  
-  // 防止路径穿越（简化版，不依赖 path 模块）
-  while (fp.includes("..")) {
-    fp = fp.replace(/\/\.\.\/?/g, "/");
-  }
-  
-  try {
-    const file = await Deno.open(`.${fp}`, { read: true });
-    const contentType = getContentType(fp);
-    return new Response(file.readable, {
-      headers: { "Content-Type": contentType },
-    });
-  } catch {
-    return new Response(`404 Not Found: ${pathname}`, {
-      status: 404,
+    // 静态文件托管 - 使用更安全的方式
+    let fp = pathname === "/" ? "/roguelike.html" : pathname;
+    
+    // 防止路径穿越
+    while (fp.includes("..")) {
+      fp = fp.replace(/\/\.\.\/?/g, "/");
+    }
+    
+    // 使用 Deno.readFile 代替 Deno.open，更稳定
+    try {
+      const content = await Deno.readFile(`.${fp}`);
+      const contentType = getContentType(fp);
+      return new Response(content, {
+        headers: { "Content-Type": contentType },
+      });
+    } catch {
+      // 如果文件不存在，返回 404
+      return new Response(`404 Not Found: ${pathname}`, {
+        status: 404,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+  } catch (error) {
+    // 全局兜底：任何未捕获的异常都返回 500
+    console.error("Unhandled error:", error);
+    return new Response("Internal Server Error", {
+      status: 500,
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   }
 };
 
-// 启动服务（不指定端口和 hostname，让 Deno Deploy 自动处理）
+// 启动服务
 serve(handler);
-
 console.log("Shadow Dungeon 已启动（Deno Deploy 模式）");
