@@ -70,6 +70,8 @@ const handler = async (req: Request): Promise<Response> => {
     try {
   // 先检查文件是否存在，避免 Deno.open 抛出非文件不存在的异常
   try {
+  // 先检查文件是否存在，避免 Deno.open 抛出非文件不存在的异常
+  try {
     const stat = await Deno.stat(`.${fp}`);
     if (!stat.isFile) {
       throw new Error("Not a file");
@@ -80,6 +82,20 @@ const handler = async (req: Request): Promise<Response> => {
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   }
+  
+  const file = await Deno.open(`.${fp}`, { read: true });
+  const contentType = getContentType(fp);
+  return new Response(file.readable, {
+    headers: { "Content-Type": contentType },
+  });
+} catch (error) {
+  // 兜底：任何意外错误都返回 500，保证服务不崩溃
+  console.error("Static file error:", error);
+  return new Response("Internal Server Error", {
+    status: 500,
+    headers: { "Content-Type": "text/plain; charset=utf-8" },
+  });
+}
   
   const file = await Deno.open(`.${fp}`, { read: true });
   const contentType = getContentType(fp);
