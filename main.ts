@@ -1,13 +1,9 @@
 // ============================================================
-// Shadow Dungeon — Deno Deploy 版（公网可访问）
-// 启动: deno serve --allow-net --allow-read --allow-env main.ts
-// 部署: deployctl deploy --prod main.ts
+// Shadow Dungeon — Deno Deploy 版（修复静态文件路径）
 // ============================================================
 
 const AI_API = "https://token.sensenova.cn/v1/chat/completions";
 const AI_MODEL = "deepseek-v4-flash";
-
-// ⚠️ 在 Deno Deploy 控制台 → Settings → Environment Variables 中设置 AI_KEY
 const AI_KEY = Deno.env.get("AI_KEY") ?? "";
 
 const MIME: Record<string, string> = {
@@ -69,38 +65,32 @@ async function proxyChat(messages: unknown[]): Promise<Response> {
   }
 }
 
-// ---------- 静态文件服务 ----------
+// ---------- 静态文件服务 (已修复) ----------
 
 async function serveStatic(pathname: string): Promise<Response> {
-  // 默认首页
+  // 1. 确定文件路径
   let filePath = pathname === "/" ? "/roguelike.html" : pathname;
 
-  // 路径遍历防护
+  // 2. 安全检查：防止路径遍历攻击
   if (filePath.includes("..")) {
     return new Response("Forbidden", { status: 403 });
   }
 
   try {
-    // ✅ 关键修复：使用 import.meta.url 解析文件路径
-    // Deno Deploy 上必须用这种方式，不能用 Deno.cwd() 拼接
-    const fileUrl = new URL(`.${filePath}`, import.meta.url).href;
-    const resp = await fetch(fileUrl);
-
-    if (!resp.ok) {
-      return new Response(`404 Not Found: ${pathname}`, {
-        status: 404,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      });
-    }
-
+    // 3. 核心修复：使用 Deno.open 读取文件
+    // 这种方式在 Deno Deploy 上最可靠，直接以项目根目录为基准查找文件
+    const file = await Deno.open(`.${filePath}`);
+    
+    // 4. 根据文件后缀名设置正确的 Content-Type
     const ext = filePath.substring(filePath.lastIndexOf(".")).toLowerCase();
     const contentType = MIME[ext] || "application/octet-stream";
 
-    return new Response(resp.body, {
+    return new Response(file.readable, {
       status: 200,
       headers: { "Content-Type": contentType },
     });
-  } catch {
+  } catch (e) {
+    // 5. 如果文件不存在或读取出错，返回 404
     return new Response(`404 Not Found: ${pathname}`, {
       status: 404,
       headers: { "Content-Type": "text/plain; charset=utf-8" },
@@ -130,7 +120,7 @@ const handler = async (req: Request): Promise<Response> => {
     return proxyChat(payload.messages);
   }
 
-  // 其余全部走静态文件
+  // 其余全部走静态文件服务
   return serveStatic(pathname);
 };
 
