@@ -1,21 +1,12 @@
 // ============================================================
-// Shadow Dungeon — Deno Deploy 版（修复静态文件路径）
+// Shadow Dungeon — Deno Deploy 版（使用 serveDir 确保静态文件正确加载）
 // ============================================================
+
+import { serveDir } from "jsr:@std/http/file-server";
 
 const AI_API = "https://token.sensenova.cn/v1/chat/completions";
 const AI_MODEL = "deepseek-v4-flash";
 const AI_KEY = Deno.env.get("AI_KEY") ?? "";
-
-const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "application/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".svg": "image/svg+xml",
-  ".ico": "image/x-icon",
-};
 
 // ---------- 工具函数 ----------
 
@@ -65,39 +56,6 @@ async function proxyChat(messages: unknown[]): Promise<Response> {
   }
 }
 
-// ---------- 静态文件服务 (已修复) ----------
-
-async function serveStatic(pathname: string): Promise<Response> {
-  // 1. 确定文件路径
-  let filePath = pathname === "/" ? "/roguelike.html" : pathname;
-
-  // 2. 安全检查：防止路径遍历攻击
-  if (filePath.includes("..")) {
-    return new Response("Forbidden", { status: 403 });
-  }
-
-  try {
-    // 3. 核心修复：使用 Deno.open 读取文件
-    // 这种方式在 Deno Deploy 上最可靠，直接以项目根目录为基准查找文件
-    const file = await Deno.open(`.${filePath}`);
-    
-    // 4. 根据文件后缀名设置正确的 Content-Type
-    const ext = filePath.substring(filePath.lastIndexOf(".")).toLowerCase();
-    const contentType = MIME[ext] || "application/octet-stream";
-
-    return new Response(file.readable, {
-      status: 200,
-      headers: { "Content-Type": contentType },
-    });
-  } catch (e) {
-    // 5. 如果文件不存在或读取出错，返回 404
-    return new Response(`404 Not Found: ${pathname}`, {
-      status: 404,
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
-  }
-}
-
 // ---------- 路由 ----------
 
 const handler = async (req: Request): Promise<Response> => {
@@ -120,8 +78,14 @@ const handler = async (req: Request): Promise<Response> => {
     return proxyChat(payload.messages);
   }
 
-  // 其余全部走静态文件服务
-  return serveStatic(pathname);
+  // ✅ 使用 serveDir 处理所有静态文件请求
+  // 它会自动处理路径、MIME 类型和安全检查
+  return serveDir(req, {
+    fsRoot: ".", // 以项目根目录为基准
+    urlRoot: "", // URL 根路径为空，表示从根目录开始匹配
+    showDirListing: false, // 禁止目录列表，更安全
+    enableCors: true, // 启用 CORS，方便本地调试
+  });
 };
 
 // ---------- 启动 ----------
