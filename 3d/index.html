@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>暗影地牢 3D - Shadow Dungeon 3D</title>
+<link rel="stylesheet" href="css/style3d.css">
+</head>
+<body>
+
+<!-- 隐藏的 2D Canvas：config.js / sprites.js 需要它初始化精灵图（3D 模式下不渲染到屏幕） -->
+<canvas id="game-canvas" width="800" height="640" style="display:none"></canvas>
+
+<div id="game-container">
+  <div id="controls-panel">
+    <div class="ctrl-title">操作指南</div>
+    <div class="ctrl-row"><span class="ctrl-key">↑↓←→</span><span class="ctrl-desc">移动 / WASD</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">G</span><span class="ctrl-desc">拾取物品</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">点击画面</span><span class="ctrl-desc">锁定鼠标</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">鼠标</span><span class="ctrl-desc">转头(第一人称)</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">左键</span><span class="ctrl-desc">近战攻击(跳跃落地=跳劈1.5x)</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">WASD</span><span class="ctrl-desc">格子移动(平滑)</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">1</span><span class="ctrl-desc">闪电链</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">2</span><span class="ctrl-desc">冰霜新星</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">3</span><span class="ctrl-desc">生命汲取</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">Q</span><span class="ctrl-desc">旋风斩</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">R</span><span class="ctrl-desc">火球术</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">T</span><span class="ctrl-desc">治愈术</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">X</span><span class="ctrl-desc">炸弹</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">C</span><span class="ctrl-desc">NPC对话</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">右键</span><span class="ctrl-desc">NPC对话(需关闭浏览器右键手势)</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">E</span><span class="ctrl-desc">交易/互动</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">B</span><span class="ctrl-desc">灵魂祭坛</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">&gt;</span><span class="ctrl-desc">下楼</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">空格</span><span class="ctrl-desc">跳跃</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">Z</span><span class="ctrl-desc">等待一回合</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">P</span><span class="ctrl-desc">存档</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">L</span><span class="ctrl-desc">读档</span></div>
+    <div class="ctrl-row"><span class="ctrl-key">0</span><span class="ctrl-desc">删除存档</span></div>
+    <div class="ctrl-row" style="margin-top:8px;border-top:1px solid #1e1e2a;padding-top:6px;"><span class="ctrl-desc" style="color:#6a6a7a;font-size:9px;text-align:center;flex:1">暗影地牢 3D v1.0</span></div>
+  </div>
+  <div id="game-main">
+    <div id="canvas-wrapper">
+      <div id="crosshair"></div>
+      <div id="hud-overlay">
+        <div id="hud-bar">
+          <div id="hp-bar-container">
+            <div id="hp-bar-fill"></div>
+            <span id="hp-text">30/30</span>
+          </div>
+          <div class="hud-stat"><span class="hud-icon">Lv</span><span id="hud-level" class="hud-val">1</span></div>
+          <div class="hud-stat"><span class="hud-icon">&#x2302;</span><span id="hud-floor" class="hud-val">1</span></div>
+          <div class="hud-stat"><span class="hud-icon">&#x2694;</span><span id="hud-kills" class="hud-val">0</span></div>
+          <div class="hud-stat"><span class="hud-icon">ATK</span><span id="hud-atk" class="hud-val">6</span></div>
+          <div class="hud-stat"><span class="hud-icon">DEF</span><span id="hud-def" class="hud-val">2</span></div>
+          <div class="hud-stat"><span class="hud-icon">G</span><span id="hud-gold" class="hud-val">0</span></div>
+          <div class="hud-stat"><span class="hud-icon">&#x1F4A3;</span><span id="hud-bombs" class="hud-val">0</span></div>
+          <div id="hud-curse"></div>
+        </div>
+        <div id="skill-bar"></div>
+      </div>
+      <div id="floor-title"></div>
+      <div id="boss-warning">&#9889; BOSS &#9889;</div>
+      <div id="damage-vignette"></div>
+    </div>
+    <div id="level-up-notification">
+      <div class="lu-icon">&#9733;</div>
+      <div class="lu-body">
+        <div class="lu-title">升级！</div>
+        <div id="lu-stats">攻击力 +1 &nbsp; 防御力 +1</div>
+        <div class="lu-note">生命值已恢复满</div>
+      </div>
+    </div>
+    <div id="game-over-overlay">
+      <h1>&#9760; 你死了</h1>
+      <p>
+        探索了 <span id="final-floor">1</span> 层地牢<br>
+        击杀了 <span id="final-kills">0</span> 个怪物<br>
+        达到等级 <span id="final-level">1</span><br>
+        收集金币 <span id="final-gold">0</span>
+      </p>
+      <p class="stats-line">生命不息，战斗不止</p>
+      <button class="btn" onclick="restartGame()">重新开始</button>
+    </div>
+    <div id="victory-overlay">
+      <h1>&#9728; 你逃出了地牢</h1>
+      <p>
+        穿越了 <span id="victory-floor">1</span> 层地牢<br>
+        击杀了 <span id="victory-kills">0</span> 个怪物<br>
+        达到等级 <span id="victory-level">1</span><br>
+        收集金币 <span id="victory-gold">0</span>
+      </p>
+      <p class="stats-line">你击败了堕天使·路西菲尔，金光撕开了地牢的穹顶。<br>光明从未如此刺眼——你，自由了。</p>
+      <button class="btn" onclick="restartGame()">再战一局</button>
+    </div>
+    <div id="tutorial-overlay">
+      <div id="tutorial-box">
+        <h2 id="tutorial-title">暗影地牢</h2>
+        <div id="tutorial-content"></div>
+        <div id="tutorial-progress">1 / 4</div>
+        <button class="btn" id="tutorial-btn" onclick="nextTutorialStep()">继续</button>
+      </div>
+    </div>
+    <div id="lore-overlay">
+      <div id="lore-box">
+        <h2 id="lore-title">📜 古老卷轴</h2>
+        <div id="lore-body"></div>
+        <button class="btn" id="lore-btn" onclick="closeLoreScroll()">收起卷轴</button>
+      </div>
+    </div>
+    <div id="shop-overlay">
+      <div id="shop-box">
+        <h2 id="shop-title">⚒ 商店</h2>
+        <div id="shop-desc" style="color:#8a8a9a;font-size:12px;margin-bottom:12px"></div>
+        <div id="shop-items"></div>
+        <div id="shop-gold" style="color:#ffd740;font-size:12px;margin:10px 0"></div>
+        <button class="btn" onclick="closeShop()">离开</button>
+      </div>
+    </div>
+    <div id="soul-shop-overlay">
+      <div id="soul-shop-box">
+        <h2 style="color:#ce93d8;margin-bottom:16px">✦ 灵魂祭坛 ✦</h2>
+        <p style="color:#8a8a9a;font-size:12px;margin-bottom:12px;line-height:1.6">
+          灵魂碎片存储在 <span style="color:#ce93d8">次元裂隙</span> 中，穿越死亡也不会消失。<br>
+          用它们来强化你的灵魂，获得永久加成。
+        </p>
+        <div id="soul-count" style="color:#e1bee7;font-size:14px;margin-bottom:14px">灵魂碎片: 0</div>
+        <div id="soul-items" style="margin-bottom:12px"></div>
+        <div id="soul-bonus" style="color:#6a6a7a;font-size:11px;margin-bottom:12px">当前永久加成: +0 ATK, +0 DEF, +0 HP</div>
+        <button class="btn" onclick="closeSoulShop()">返回</button>
+      </div>
+    </div>
+    <div id="npc-chat-overlay">
+      <div id="npc-chat-box">
+        <div id="npc-chat-header">
+          <span id="npc-chat-name">——</span>
+          <span id="npc-chat-mood"></span>
+        </div>
+        <div id="npc-chat-messages"></div>
+        <div id="npc-chat-input-area">
+          <input type="text" id="npc-chat-input" placeholder="输入你想说的话..." maxlength="200" autocomplete="off" />
+          <button id="npc-chat-send">发送</button>
+        </div>
+        <div id="npc-chat-actions">
+          <button class="btn" id="npc-chat-bargain-btn">💰 讨价还价</button>
+          <button class="btn" onclick="openNPCShip()">⚒ 打开商店</button>
+          <button class="btn" onclick="closeNPCChat()">关闭对话</button>
+        </div>
+        <div id="npc-chat-notice">C 键对话 | 与 NPC 自由交流，说不定会有意外收获</div>
+      </div>
+    </div>
+  </div>
+  <div id="bottom-bar">
+    <div id="messages">
+      <div class="msg-line" id="msg-0">进入暗影地牢 3D...</div>
+      <div class="msg-line" id="msg-1"></div>
+      <div class="msg-line" id="msg-2"></div>
+    </div>
+    <span id="controls-hint"></span>
+  </div>
+</div>
+
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<!-- Reuse all game logic from original 2D version -->
+<script src="../js/config.js"></script>
+<script src="../js/curse.js"></script>
+<script src="../js/utils.js"></script>
+<script src="../js/lore.js"></script>
+<script src="../js/sprites.js"></script>
+<script src="../js/effects.js"></script>
+<script src="../js/map.js"></script>
+<script src="../js/entities.js"></script>
+<script src="../js/player.js"></script>
+<script src="../js/skills.js"></script>
+<script src="../js/game.js"></script>
+<!-- 3D rendering (replaces render.js) -->
+<script src="js/render3d.js"></script>
+<!-- 3D chunk system (dynamic tile loading) -->
+<script src="js/chunks3d.js"></script>
+<script src="../js/npc.js"></script>
+<!-- 3D input (replaces input.js) -->
+<script src="js/input3d.js"></script>
+<!-- 3D main loop (replaces main.js) -->
+<script src="js/main3d.js"></script>
+</body>
+</html>
