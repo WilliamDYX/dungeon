@@ -1,14 +1,13 @@
 // ============================================================
 // Shadow Dungeon — Deno Deploy 版（公网可访问）
-// 启动: deno task dev（本地调试）
-// 部署: deno task deploy（推到 Deno Deploy 公网）
+// 启动: deno serve --allow-net --allow-read --allow-env main.ts
+// 部署: deployctl deploy --prod main.ts
 // ============================================================
 
 const AI_API = "https://token.sensenova.cn/v1/chat/completions";
 const AI_MODEL = "deepseek-v4-flash";
 
-// ⚠️ API Key 请在 Deno Deploy 控制台 → Settings → Environment Variables 中设置
-// 变量名: AI_KEY
+// ⚠️ 在 Deno Deploy 控制台 → Settings → Environment Variables 中设置 AI_KEY
 const AI_KEY = Deno.env.get("AI_KEY") ?? "";
 
 const MIME: Record<string, string> = {
@@ -82,12 +81,22 @@ async function serveStatic(pathname: string): Promise<Response> {
   }
 
   try {
-    // Deno Deploy 会将仓库文件打包，可直接通过相对路径读取
-    const file = await Deno.readFile(`.${filePath}`);
+    // ✅ 关键修复：使用 import.meta.url 解析文件路径
+    // Deno Deploy 上必须用这种方式，不能用 Deno.cwd() 拼接
+    const fileUrl = new URL(`.${filePath}`, import.meta.url).href;
+    const resp = await fetch(fileUrl);
+
+    if (!resp.ok) {
+      return new Response(`404 Not Found: ${pathname}`, {
+        status: 404,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
     const ext = filePath.substring(filePath.lastIndexOf(".")).toLowerCase();
     const contentType = MIME[ext] || "application/octet-stream";
 
-    return new Response(file, {
+    return new Response(resp.body, {
       status: 200,
       headers: { "Content-Type": contentType },
     });
